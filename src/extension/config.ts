@@ -2,9 +2,10 @@
  * Persistent pi-shepherd settings.
  *
  * The user file stores personal values. The project file is anchored at the
- * current cwd and, when it carries `projectScope: true`, is a self-contained
- * source for project-overridable values. `confirmProjectAgents` is deliberately
- * user-owned because a repository must not be able to disable its trust gate.
+ * current cwd and, when Pi trusts that project and it carries
+ * `projectScope: true`, is a self-contained source for project-overridable
+ * values. `confirmProjectAgents` is deliberately user-owned because a
+ * repository must not be able to disable its trust gate.
  */
 
 import * as fs from 'node:fs';
@@ -28,6 +29,8 @@ type ProjectField = (typeof PROJECT_FIELDS)[number];
 /** Fields stored in the trusted user config. */
 const USER_FIELDS = [...PROJECT_FIELDS, 'confirmProjectAgents'] as const;
 type UserField = (typeof USER_FIELDS)[number];
+
+export type ProjectTrust = boolean | undefined;
 
 export interface ShepherdSettings {
   /** True when the current cwd's project file is the active source. */
@@ -201,10 +204,11 @@ function migrateLegacySettingsFile(newFile: string): void {
 }
 
 /**
- * Resolve settings for one workspace. An active project file starts from built-in
- * defaults; only the user-owned confirmation gate comes from the user layer.
+ * Resolve settings for one workspace. Project state is read only with an
+ * affirmative Pi trust decision; an active project file starts from built-in
+ * defaults and only the user-owned confirmation gate comes from the user layer.
  */
-export function loadSettings(cwd?: string): ShepherdSettings {
+export function loadSettings(cwd?: string, projectTrusted: ProjectTrust = false): ShepherdSettings {
   const userFile = userConfigFile();
   migrateLegacySettingsFile(userFile);
   const user = {
@@ -214,6 +218,9 @@ export function loadSettings(cwd?: string): ShepherdSettings {
   } as ShepherdSettings;
   if (typeof cwd !== 'string' || cwd.length === 0) return user;
 
+  // Pi's effective trust decision is the only authority for project state.
+  // Missing or false trust deliberately skips the project file entirely.
+  if (projectTrusted !== true) return user;
   const project = readPartialLayer(projectConfigFile(cwd), true);
   if (!project?.projectScope) return user;
   return {
@@ -228,8 +235,12 @@ export function loadSettings(cwd?: string): ShepherdSettings {
  * Return parked project values for menu activation. Missing fields use built-in
  * defaults, never the current user's private values.
  */
-export function loadProjectFileValues(projectRoot: string): Pick<ShepherdSettings, ProjectField> {
-  const project = readPartialLayer(projectConfigFile(projectRoot), true);
+export function loadProjectFileValues(
+  projectRoot: string,
+  projectTrusted: ProjectTrust = false
+): Pick<ShepherdSettings, ProjectField> {
+  const project =
+    projectTrusted === true ? readPartialLayer(projectConfigFile(projectRoot), true) : undefined;
   const values = {} as Record<ProjectField, unknown>;
   for (const field of PROJECT_FIELDS) {
     const value = project?.[field];
@@ -245,11 +256,13 @@ export function loadProjectFileValues(projectRoot: string): Pick<ShepherdSetting
 export function saveSettings(
   next: ShepherdSettings,
   scope: 'user' | 'project' = 'user',
-  projectRoot?: string
+  projectRoot?: string,
+  projectTrusted: ProjectTrust = false
 ): { file: string; created: boolean } {
   let file: string;
   if (scope === 'project') {
     if (!projectRoot) throw new Error('projectRoot is required to save the project config layer');
+    if (projectTrusted !== true) throw new Error('Project settings require a trusted project.');
     file = projectConfigFile(projectRoot);
   } else {
     file = userConfigFile();
@@ -274,8 +287,12 @@ export function saveSettings(
  * object other than an already-false flag is normalized to the boolean form;
  * this includes keyless and legacy-string project files.
  */
-export function deactivateProjectScope(projectRoot: string): { file: string; changed: boolean } {
+export function deactivateProjectScope(
+  projectRoot: string,
+  projectTrusted: ProjectTrust = false
+): { file: string; changed: boolean } {
   const file = projectConfigFile(projectRoot);
+  if (projectTrusted !== true) return { file, changed: false };
   let raw: unknown;
   try {
     raw = JSON.parse(fs.readFileSync(file, 'utf8'));
@@ -297,8 +314,8 @@ export function deactivateProjectScope(projectRoot: string): { file: string; cha
 // Fieldnotes are session-scoped so a running parent session has one stable mode.
 let sessionFieldnotesEnabled: boolean | undefined;
 
-export function initializeSessionSettings(cwd?: string): void {
-  sessionFieldnotesEnabled = loadSettings(cwd).fieldnotes;
+export function initializeSessionSettings(cwd?: string, projectTrusted: ProjectTrust = false): void {
+  sessionFieldnotesEnabled = loadSettings(cwd, projectTrusted).fieldnotes;
 }
 
 export function fieldnotesEnabled(): boolean {

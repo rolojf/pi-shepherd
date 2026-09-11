@@ -243,12 +243,18 @@ try {
       JSON.stringify({ projectScope: true, staleWaitThreshold: 0 })
     );
     const registry = new LifecycleRegistry();
-    const scout = registry.registerAgent({ agent: 'scout', label: 'cwd-specific', cwd: workspace });
-    const planner = registry.registerAgent({
-      agent: 'planner',
-      label: 'cwd-target',
-      cwd: workspace,
-    });
+    const scout = registry.registerAgent(
+      { agent: 'scout', label: 'cwd-specific', cwd: workspace },
+      { projectTrusted: true }
+    );
+    const planner = registry.registerAgent(
+      {
+        agent: 'planner',
+        label: 'cwd-target',
+        cwd: workspace,
+      },
+      { projectTrusted: true }
+    );
     const { monitor, infos } = makeMonitor(registry);
     const task = registry.createTask(scout, 'Workspace-specific stale wait.');
     registry.setTaskRunning(task.id);

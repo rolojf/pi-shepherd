@@ -3,7 +3,8 @@
  * Phase 1 — discovery verification harness.
  *
  * Exercises discoverAgents() across the fixture tree in test/fixtures and
- * asserts precedence + scope filtering across the user/project locations.
+ * asserts precedence + scope filtering across the user/project locations;
+ * project fixtures opt into an explicit trusted-project discovery call.
  *
  * How user dirs are controlled: discovery.ts resolves user dirs via
  * getAgentDir() (= $HOME/.pi/agent) and os.homedir() (= $HOME/.agents). Both
@@ -137,7 +138,7 @@ assert(
 assert(resolveDelegatedModel(undefined, undefined) === undefined, 'model: absent parent omitted');
 
 // --- project scope: only project agents ------------------------------------
-const project = discoverAgents(proj, 'project');
+const project = discoverAgents(proj, 'project', { projectTrusted: true });
 assert(!!descOf(project, 'project-pi'), 'project scope: includes project-pi');
 assert(!!descOf(project, 'proj-shared'), 'project scope: includes proj-shared');
 assert(!descOf(project, 'only-user'), 'project scope: excludes only-user (user)');
@@ -148,7 +149,7 @@ assert(
 );
 
 // --- both scope: precedence user1 > user2 > project ------------------------
-const both = discoverAgents(proj, 'both');
+const both = discoverAgents(proj, 'both', { projectTrusted: true });
 assert(!!descOf(both, 'only-user'), 'both scope: includes only-user');
 assert(!!descOf(both, 'proj-shared'), 'both scope: includes proj-shared');
 assert(!!descOf(both, 'project-pi'), 'both scope: includes project-pi');

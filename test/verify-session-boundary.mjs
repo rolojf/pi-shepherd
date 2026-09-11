@@ -94,6 +94,8 @@ console.log('PASS in-flight spawn ids cannot be registered after a session switc
 // regression cannot be hidden by testing beginSession() without wiring it up.
 const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
 process.env.PI_CODING_AGENT_DIR = mkdtempSync(path.join(tmpdir(), 'pi-shepherd-session-boundary-'));
+const previousShepherdSession = process.env.PI_SHEPHERD_SESSION;
+delete process.env.PI_SHEPHERD_SESSION;
 try {
   const calls = { events: [] };
   const pi = {
@@ -141,6 +143,8 @@ try {
 } finally {
   if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
   else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+  if (previousShepherdSession === undefined) delete process.env.PI_SHEPHERD_SESSION;
+  else process.env.PI_SHEPHERD_SESSION = previousShepherdSession;
 }
 
 console.log('All session-boundary assertions passed.');

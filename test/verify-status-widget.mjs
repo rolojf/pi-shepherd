@@ -211,7 +211,8 @@ const probe = `
   const handlers = calls.events.filter(e => e.event === "session_start");
   const fakeUi = { setWidget(id, factory) { calls.widgets.push({ id, factory }); } };
   const driveSessionStart = (cwd) => {
-    for (const { handler } of handlers) handler(null, { hasUI: true, cwd, ui: fakeUi });
+    for (const { handler } of handlers)
+      handler(null, { hasUI: true, cwd, ui: fakeUi, isProjectTrusted: () => true });
   };
   driveSessionStart(${JSON.stringify(homeCwd)});
   const widget = calls.widgets.find(w => w.id === "pi-shepherd-working");

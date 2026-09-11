@@ -840,8 +840,18 @@ type ShepherdContext = {
   model?: DelegatorModel;
   hasUI?: boolean;
   ui?: any;
+  isProjectTrusted?: () => boolean;
   sessionManager?: { getSessionId(): string; getSessionFile?(): string | undefined };
 };
+
+function projectTrusted(ctx: ShepherdContext): boolean {
+  if (typeof ctx.isProjectTrusted !== 'function') return false;
+  try {
+    return ctx.isProjectTrusted() === true;
+  } catch {
+    return false;
+  }
+}
 
 function parentArtifactSession(ctx: ShepherdContext): ShepherdSession | undefined {
   // The setting is snapshotted when the parent pi session starts. This means
@@ -912,7 +922,7 @@ export async function doAction(
     }
     case 'delegate': {
       const a: any = args;
-      const timeoutMinutes = a.timeout ?? loadSettings(ctx.cwd).timeout;
+      const timeoutMinutes = a.timeout ?? loadSettings(ctx.cwd, projectTrusted(ctx)).timeout;
       if (!Number.isFinite(timeoutMinutes) || timeoutMinutes <= 0) {
         throw new Error('Delegated task timeout must be a positive number of minutes.');
       }
@@ -969,7 +979,7 @@ export async function doAction(
       const a: any = args;
       // Convert timeout from minutes to milliseconds for internal use.
       // Default: from settings (20 minutes).
-      const defaultTimeout = loadSettings(ctx.cwd).timeout;
+      const defaultTimeout = loadSettings(ctx.cwd, projectTrusted(ctx)).timeout;
       const timeoutMinutes = a.timeout ?? defaultTimeout;
       const timeoutMs = timeoutMinutes * 60_000;
       const handle = await promptAgent(a.id ?? a.handle, a.message, { timeout: timeoutMs });
@@ -1089,9 +1099,12 @@ export async function doAction(
     }
     case 'agents': {
       // List available agent definitions for the shepherd's herd.
-      const scope = args.agentScope ?? loadSettings(ctx.cwd).agentScope;
+      const trust = projectTrusted(ctx);
+      const settings = loadSettings(ctx.cwd, trust);
+      const scope = args.agentScope ?? settings.agentScope;
       const { agents, projectDirs } = discoverAgents(ctx.cwd, scope, {
-        includeBundled: loadSettings(ctx.cwd).includeBundledAgents,
+        includeBundled: settings.includeBundledAgents,
+        projectTrusted: trust,
       });
       if (agents.length === 0)
         return textResult(

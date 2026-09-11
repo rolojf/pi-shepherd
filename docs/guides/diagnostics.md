@@ -46,7 +46,9 @@ There are two modes:
 
 Only the extension required by the selected mode is loaded explicitly. This
 keeps the diagnostic deterministic and avoids accidentally loading a second
-copy of pi-shepherd from the installed Pi extensions.
+copy of pi-shepherd from the installed Pi extensions. Project-agent discovery
+uses Pi's current `ctx.isProjectTrusted()` decision; missing or declined trust
+fails closed rather than reading project definitions.
 
 The captured prompt can include more than the Markdown body of an agent
 file—for example Pi's built-in instructions, project context, skills, tool
@@ -54,8 +56,10 @@ guidance, and pi-shepherd's prompt adjustments.
 
 ## Agent discovery options
 
-By default, agents are discovered from the user scope. Use `--scope project` or
-`--scope both` when you need project-controlled definitions:
+By default, agents are discovered from the user scope. In a normal Pi
+session, project-agent discovery is allowed only after Pi trusts the current
+project. Use `--scope project` or `--scope both` when you need project-controlled
+definitions:
 
 ```bash
 npm run extract:system-prompt -- agent scout --scope both
@@ -67,9 +71,11 @@ npm run extract:system-prompt -- agent scout --scope project \
 session. The default is the current working directory.
 
 The regular discovery precedence is preserved: user definitions take
-precedence over project definitions, followed by bundled definitions. If the
-agent cannot be found, the command reports an error and exits without
-capturing a prompt.
+precedence over project definitions, followed by bundled definitions. The
+standalone `show:shepherd-prompt` helper has no Pi trust context and therefore
+fails closed for project scopes; use `extract:system-prompt` for a Pi-backed
+trusted diagnostic. If the agent cannot be found, the command reports an error
+and exits without capturing a prompt.
 
 ## Inspecting only the Shepherd contribution
 

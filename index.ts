@@ -118,7 +118,7 @@ function registerSubagentStatusWidget(pi: ExtensionAPI): void {
                   theme,
                   width,
                   sheepFrame,
-                  loadSettings(currentCwd()).emojiSheep
+                  loadSettings(currentCwd(), activeSessionProjectTrusted).emojiSheep
                 )
               : [],
           invalidate: () => {
@@ -375,7 +375,8 @@ async function runCommandAction(args: ShepherdArgs, ctx: ExtensionCommandContext
       cwd: ctx.cwd,
       sessionManager: ctx.sessionManager as any,
       ui: ctx.ui,
-      hasUI: true,
+      hasUI: ctx.hasUI,
+      isProjectTrusted: () => projectTrust(ctx),
     });
     const text = result.content.find(c => c.type === 'text')?.text ?? '(no output)';
     const hasError =
@@ -395,6 +396,16 @@ async function runCommandAction(args: ShepherdArgs, ctx: ExtensionCommandContext
  * time. Falls back to the process cwd until session_start fires.
  */
 let activeSessionCwd: string | undefined;
+let activeSessionProjectTrusted = false;
+
+function projectTrust(ctx: { isProjectTrusted?: () => boolean }): boolean {
+  if (typeof ctx.isProjectTrusted !== 'function') return false;
+  try {
+    return ctx.isProjectTrusted() === true;
+  } catch {
+    return false;
+  }
+}
 
 function currentCwd(): string {
   return activeSessionCwd ?? process.cwd();
@@ -407,9 +418,10 @@ export default function (pi: ExtensionAPI) {
     setStaleWaitSessionActive(true);
     setShepherdMessageSessionActive(true);
     activeSessionCwd = ctx.cwd;
+    activeSessionProjectTrusted = projectTrust(ctx);
     // Fieldnotes are intentionally session-scoped. Persisted setting changes
     // are applied when the next parent pi session starts.
-    initializeSessionSettings(ctx.cwd);
+    initializeSessionSettings(ctx.cwd, activeSessionProjectTrusted);
     // Advance the in-memory lifecycle namespace when pi switches parent
     // sessions. The extension module can survive a session switch, so labels
     // and opaque lifecycle ids must not leak across the boundary.
@@ -433,6 +445,7 @@ export default function (pi: ExtensionAPI) {
     // Drop the binding on teardown so a reload/new-session cycle without a
     // fresh identity never attributes fresh panes to a stale session.
     bindSessionOwner(undefined);
+    activeSessionProjectTrusted = false;
   });
 
   // Launched workers load the user extension set too, but their only Shepherd
@@ -457,9 +470,10 @@ export default function (pi: ExtensionAPI) {
       const discoveredAgentNames = () =>
         (() => {
           const cwd = currentCwd();
-          const s = loadSettings(cwd);
+          const s = loadSettings(cwd, activeSessionProjectTrusted);
           return discoverAgents(cwd, s.agentScope, {
             includeBundled: s.includeBundledAgents,
+            projectTrusted: activeSessionProjectTrusted,
           });
         })()
           .agents.filter(agent => agent.name.length > 0)

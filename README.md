@@ -162,7 +162,7 @@ The bundled agent definitions are:
 -   `worker` — implementation work
 -   `reviewer` — review and verification
 
-User and project definitions can add or override these names. Discovery precedence is:
+User and project definitions can add or override these names. Pi project trust is required before Shepherd reads project configuration or project agent directories; unknown or declined trust fails closed. Discovery precedence is:
 
 1.  `~/.pi/agent/agents/`
 2.  `~/.agents/agents/`
@@ -171,7 +171,7 @@ User and project definitions can add or override these names. Discovery preceden
 5.  bundled `.pi/agents/`
 6.  bundled `.agents/agents/`
 
-User-level discovery is the default. Project definitions are repo-controlled, require explicitly selecting project/both scope, and require confirmation when running interactively. The bundled definitions can be disabled from settings. Agents retain the host user’s normal pi tool permissions.
+User-level discovery is the default. Project definitions are repo-controlled, require Pi trust for the current project, explicitly selecting project/both scope, and per-spawn confirmation when running interactively. If confirmation is enabled but no UI is available, the spawn is rejected. The bundled definitions can be disabled from settings. Agents retain the host user’s normal pi tool permissions.
 
 ## Placement and lifecycle
 
@@ -185,7 +185,7 @@ shepherd_spawn({
 })
 ```
 
-The working directory defaults to the Shepherd session and `cwd` can be supplied when spawning. The child model is selected only by the discovered agent definition; omission, `null`, or `default` inherits the Shepherd session model. Agent scope, project approval, and prompt-shaping options come from Shepherd settings and the discovered agent definition; they are not spawn overrides.
+The working directory defaults to the Shepherd session and `cwd` can be supplied when spawning. Project trust does not widen to a different spawn cwd: project configuration and project agents are available only for the current session cwd; user and bundled agents remain usable elsewhere. The child model is selected only by the discovered agent definition; omission, `null`, or `default` inherits the Shepherd session model. Agent scope, project approval, and prompt-shaping options come from Shepherd settings and the discovered agent definition; they are not spawn overrides.
 
 Lifecycle tools use short, opaque, session-scoped IDs:
 
@@ -237,10 +237,12 @@ Enter to cycle values, `/` to fuzzy-search, and `Esc` to close it.
 The user layer is stored in `pi-shepherd/config.json` inside the active pi
 agent directory (`~/.pi/agent` by default, or `PI_CODING_AGENT_DIR`). It stores
 personal values only. The project layer is `.shepherd/config.json` in the
-current working directory, with no walk-up. A project file is active only when
-it contains `"projectScope": true`; when active, it is self-contained and
-missing project-owned fields fall back to built-in defaults rather than private
-user values. A project file with `projectScope: false` or no flag is dormant.
+current working directory, with no walk-up. Pi must trust the current project
+before Shepherd reads this file; missing or declined trust uses only the user
+layer. Once trusted, a project file is active only when it contains
+`"projectScope": true`; when active, it is self-contained and missing
+project-owned fields fall back to built-in defaults rather than private user
+values. A project file with `projectScope: false` or no flag is dormant.
 
 `confirmProjectAgents` is intentionally user-owned. A committed project file
 may select repository-controlled agent definitions through `agentScope`, but it
@@ -308,7 +310,7 @@ npm run extract:system-prompt -- agent scout --output /tmp/scout-system.md
 npm run extract:system-prompt -- shepherd --json
 ```
 
-This captures the prompt at pi’s `before_agent_start` hook without making a provider request. For the full prompt-composition workflow and troubleshooting, see the [Diagnostics guide](docs/diagnostics.md).
+This captures the prompt at pi’s `before_agent_start` hook without making a provider request. Project-agent diagnostics use Pi’s current trust decision; missing or declined trust fails closed. For the full prompt-composition workflow and troubleshooting, see the [Diagnostics guide](docs/diagnostics.md).
 
 ### Inspect active agents
 

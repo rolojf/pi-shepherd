@@ -32,6 +32,8 @@ fs.writeFileSync(
   })
 );
 
+const previousShepherdSession = process.env.PI_SHEPHERD_SESSION;
+delete process.env.PI_SHEPHERD_SESSION;
 const commands = new Map();
 const events = [];
 const pi = {
@@ -98,3 +100,5 @@ assert.match(notifications.at(-1).message, /Unknown agent/);
 
 console.log('PASS command completions, usage hints, and spawn status cleanup');
 console.log('All command UX assertions passed.');
+if (previousShepherdSession === undefined) delete process.env.PI_SHEPHERD_SESSION;
+else process.env.PI_SHEPHERD_SESSION = previousShepherdSession;

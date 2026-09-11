@@ -597,7 +597,7 @@ export function writePiLaunchFiles(opts: {
   // shepherd-done extension's shepherd_message/shepherd_done available even
   // when the agent definition restricts built-in tools.
   const tools = opts.tools ? [...new Set([...opts.tools, ...CHILD_SURFACE_TOOLS])] : undefined;
-  if (tools && tools.length > 0) args.push('--tools', tools.join(','));
+  if (tools && tools.length > 0) args.push('--tools', shellQuote(tools.join(',')));
 
   let systemPromptFile: string | undefined;
   if (opts.systemPrompt !== undefined) {

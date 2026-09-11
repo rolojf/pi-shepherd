@@ -119,6 +119,8 @@ export interface TaskRecord {
   artifactSession?: ShepherdSession;
   /** Workspace cwd owning this task. */
   cwd?: string;
+  /** Pi project-trust decision captured when the owning agent was spawned. */
+  projectTrusted?: boolean;
   artifact?: ArtifactReservation;
   result?: TaskResult;
 }
@@ -261,6 +263,8 @@ interface AgentRecord {
   activeTaskId?: string;
   /** Parent broker capability used to launch and route this child. */
   childCapability?: ChildCapability;
+  /** Trust snapshot captured when this agent was spawned. */
+  projectTrusted?: boolean;
   error?: string;
 }
 
@@ -401,6 +405,7 @@ export class LifecycleRegistry {
       completionResultPath?: string;
       artifactSession?: ShepherdSession;
       childCapability?: ChildCapability;
+      projectTrusted?: boolean;
     } = {}
   ): AgentHandle {
     const label = validateAgentLabel(input.label);
@@ -443,6 +448,7 @@ export class LifecycleRegistry {
       completionResultPath: metadata.completionResultPath,
       artifactSession: metadata.artifactSession,
       childCapability: metadata.childCapability,
+      projectTrusted: metadata.projectTrusted === true,
       state: 'idle',
     });
     return { ...handle };
@@ -470,6 +476,11 @@ export class LifecycleRegistry {
   agentChildCapability(handle: AgentHandleInput): ChildCapability | undefined {
     const capability = this.getAgent(handle).childCapability;
     return capability ? { ...capability } : undefined;
+  }
+
+  /** Return the trust snapshot captured when an agent was spawned. */
+  agentProjectTrusted(handle: AgentHandleInput): boolean {
+    return this.getAgent(handle).projectTrusted === true;
   }
 
   status(handle: AgentHandleInput, state?: AgentLifecycleState, error?: string): AgentStatus {
@@ -595,6 +606,7 @@ export class LifecycleRegistry {
       createdAt,
       deadlineAt,
       cwd: agent.handle.cwd,
+      projectTrusted: agent.projectTrusted === true,
       pendingRequestIds: new Set(),
       artifactSession: options.artifactSession,
       settled: false,
@@ -695,6 +707,7 @@ export class LifecycleRegistry {
       state: record.state,
       createdAt: record.createdAt,
       ...(record.cwd !== undefined ? { cwd: record.cwd } : {}),
+      ...(record.projectTrusted === true ? { projectTrusted: true } : {}),
       ...(record.startedAt !== undefined ? { startedAt: record.startedAt } : {}),
       ...(record.waitingSince !== undefined ? { waitingSince: record.waitingSince } : {}),
       ...(record.deadlineAt !== undefined ? { deadlineAt: record.deadlineAt } : {}),

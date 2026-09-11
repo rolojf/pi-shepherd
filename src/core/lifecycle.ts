@@ -1,4 +1,6 @@
 import { randomUUID } from 'node:crypto';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import { discoverAgents, resolveDelegatedModel } from './discovery.ts';
 import {
   createEnvelope,
@@ -114,6 +116,31 @@ export function shutdownParentBroker(childrenGone: () => boolean): boolean {
   return closed;
 }
 
+function canonicalCwd(cwd: string): string {
+  const resolved = path.resolve(cwd);
+  try {
+    return fs.realpathSync.native(resolved);
+  } catch {
+    return resolved;
+  }
+}
+
+/** Trust is scoped to the session cwd; cwd overrides never widen it. */
+function trustedSpawnCwd(
+  ctxCwd: string,
+  targetCwd: string,
+  ctx: { isProjectTrusted?: () => boolean }
+): boolean {
+  if (typeof ctx.isProjectTrusted !== 'function') return false;
+  let trusted = false;
+  try {
+    trusted = ctx.isProjectTrusted() === true;
+  } catch {
+    return false;
+  }
+  return trusted && canonicalCwd(ctxCwd) === canonicalCwd(targetCwd);
+}
+
 export interface StartOptions {
   cwd?: string;
   placement?: 'pane_right' | 'pane_down' | 'tab' | 'workspace';
@@ -130,18 +157,21 @@ export async function startAgent(
     model?: { provider: string; id: string };
     hasUI?: boolean;
     ui?: any;
+    isProjectTrusted?: () => boolean;
     sessionId?: string;
   }
 ): Promise<AgentHandle> {
-  const cwd = options.cwd ?? ctx.cwd;
+  const cwd = path.resolve(ctx.cwd, options.cwd ?? '.');
   const label = validateAgentLabel(options.label);
-  const settings = loadSettings(cwd);
+  const projectTrusted = trustedSpawnCwd(ctx.cwd, cwd, ctx);
+  const settings = loadSettings(cwd, projectTrusted);
   // Agent scope and project approval are settings-owned; callers cannot
   // override them per spawn.
   const agentScope = settings.agentScope;
   const confirmProjectAgents = settings.confirmProjectAgents;
   const discovered = discoverAgents(cwd, agentScope, {
     includeBundled: settings.includeBundledAgents,
+    projectTrusted,
   }).agents;
   const found = discovered.find(a => a.name === name);
   if (!found) {
@@ -154,7 +184,10 @@ export async function startAgent(
         ' Call shepherd with action "agents" to list exact names.'
     );
   }
-  if (found.source === 'project' && confirmProjectAgents && ctx.hasUI) {
+  if (found.source === 'project' && confirmProjectAgents) {
+    if (!ctx.hasUI || typeof ctx.ui?.confirm !== 'function') {
+      throw new Error('Project-local agent approval requires a confirmation UI.');
+    }
     const ok = await ctx.ui.confirm(
       'Run project-local agent?',
       `Agent: ${name}\nSource: ${found.filePath}`
@@ -232,6 +265,7 @@ export async function startAgent(
         completionResultPath: files.sessionFile,
         artifactSession: options.artifactSession,
         childCapability,
+        projectTrusted,
       }
     );
   } catch (error) {
@@ -476,7 +510,12 @@ export function sendParentMessage(input: ParentMessageInput): ParentMessageResul
     throw new LifecycleError('closed_handle', `Agent "${input.target}" is closed.`);
   }
   const replyDeadline = input.expectsReply
-    ? Date.now() + loadSettings(agent.handle.cwd ?? process.cwd()).timeout * 60_000
+    ? Date.now() +
+      loadSettings(
+        agent.handle.cwd ?? process.cwd(),
+        lifecycleRegistry.agentProjectTrusted(agent.handle)
+      ).timeout *
+        60_000
     : undefined;
   if (input.expectsReply && input.taskId) {
     // Open the request before publishing so the task never waits on a
@@ -1303,7 +1342,8 @@ export class StaleWaitMonitor {
       const thresholdMinutes = (() => {
         try {
           return loadSettings(
-            task.cwd ?? this.registry.getAgent({ id: task.agentId }).handle.cwd ?? process.cwd()
+            task.cwd ?? this.registry.getAgent({ id: task.agentId }).handle.cwd ?? process.cwd(),
+            task.projectTrusted
           ).staleWaitThreshold;
         } catch {
           return 5;

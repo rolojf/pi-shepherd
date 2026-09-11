@@ -8,10 +8,29 @@
  * run from a checkout.
  */
 
-import { mkdirSync, renameSync, writeFileSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { mkdirSync, realpathSync, renameSync, writeFileSync } from 'node:fs';
+import { dirname, resolve as resolvePath } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { discoverAgents } from '../src/core/discovery.ts';
+
+function canonicalCwd(cwd) {
+  const resolved = resolvePath(cwd);
+  try {
+    return realpathSync.native(resolved);
+  } catch {
+    return resolved;
+  }
+}
+
+function projectTrustedForCwd(cwd, ctx) {
+  if (typeof ctx.cwd !== 'string' || canonicalCwd(cwd) !== canonicalCwd(ctx.cwd)) return false;
+  if (typeof ctx.isProjectTrusted !== 'function') return false;
+  try {
+    return ctx.isProjectTrusted() === true;
+  } catch {
+    return false;
+  }
+}
 
 export default function resolveAgent(pi) {
   const target = process.env.PI_AGENT_DISCOVERY_FILE;
@@ -23,7 +42,10 @@ export default function resolveAgent(pi) {
       const scope = process.env.PI_AGENT_DISCOVERY_SCOPE ?? 'user';
       const cwd = process.env.PI_AGENT_DISCOVERY_CWD ?? process.cwd();
       const name = process.env.PI_AGENT_DISCOVERY_NAME ?? '';
-      const found = discoverAgents(cwd, scope).agents.find(agent => agent.name === name);
+      const projectTrusted = projectTrustedForCwd(cwd, ctx);
+      const found = discoverAgents(cwd, scope, { projectTrusted }).agents.find(
+        agent => agent.name === name
+      );
       result = found
         ? { ok: true, agent: found }
         : { ok: false, error: `Agent not found: ${name}` };

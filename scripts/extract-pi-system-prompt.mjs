@@ -117,7 +117,7 @@ async function resolveAgent() {
   const discoveryFile = resolve(temporaryDir, 'agent.json');
   const child = spawn(
     piCommand,
-    ['--mode', 'json', '--no-session', '--no-extensions', '--approve', '-e', resolverExtension],
+    ['--mode', 'json', '--no-session', '--no-extensions', '-e', resolverExtension],
     {
       cwd,
       stdio: ['ignore', 'ignore', 'pipe'],
@@ -181,7 +181,6 @@ const args = [
   'json',
   '--no-session',
   '--no-extensions',
-  '--approve',
   '-e',
   extension,
   '-e',

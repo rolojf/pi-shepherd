@@ -70,17 +70,22 @@ function applyValue(settings: ShepherdSettings, id: string, value: string): Shep
   return next;
 }
 
-function refreshItems(items: SettingItem[], settings: ShepherdSettings, cwd: string): void {
+function refreshItems(
+  items: SettingItem[],
+  settings: ShepherdSettings,
+  cwd: string,
+  projectTrusted: boolean
+): void {
   const scopeItem = items[0];
   if (settings.projectScope) {
     scopeItem.currentValue = 'project';
     scopeItem.values = ['project', 'user'];
-  } else if (fs.existsSync(projectConfigFile(cwd))) {
+  } else if (projectTrusted && fs.existsSync(projectConfigFile(cwd))) {
     scopeItem.currentValue = 'user (project file dormant)';
     scopeItem.values = ['user (project file dormant)', 'project'];
   } else {
     scopeItem.currentValue = 'user';
-    scopeItem.values = ['user', 'project'];
+    scopeItem.values = projectTrusted ? ['user', 'project'] : ['user'];
   }
 
   const [bundledValue, bundledValues] = booleans(settings.includeBundledAgents);
@@ -109,7 +114,13 @@ function refreshItems(items: SettingItem[], settings: ShepherdSettings, cwd: str
 /** Render and drive the settings menu. */
 export async function openSettings(ctx: ExtensionCommandContext): Promise<void> {
   const cwd = ctx.cwd;
-  let settings = loadSettings(cwd);
+  let projectTrusted = false;
+  try {
+    projectTrusted = ctx.isProjectTrusted() === true;
+  } catch {
+    projectTrusted = false;
+  }
+  let settings = loadSettings(cwd, projectTrusted);
 
   await ctx.ui.custom((_tui, theme, _kb, done) => {
     const container = new Container();
@@ -190,7 +201,7 @@ export async function openSettings(ctx: ExtensionCommandContext): Promise<void> 
       },
     ];
 
-    refreshItems(items, settings, cwd);
+    refreshItems(items, settings, cwd, projectTrusted);
     let list: SettingsList;
     list = new SettingsList(
       items,
@@ -201,9 +212,10 @@ export async function openSettings(ctx: ExtensionCommandContext): Promise<void> 
           const next = applyValue(settings, id, value);
           if (id === 'projectScope') {
             if (value === 'project') {
-              const parked = loadProjectFileValues(cwd);
+              if (!projectTrusted) throw new Error('Project settings require a trusted project.');
+              const parked = loadProjectFileValues(cwd, projectTrusted);
               settings = { ...settings, ...parked, projectScope: true };
-              const result = saveSettings(settings, 'project', cwd);
+              const result = saveSettings(settings, 'project', cwd, projectTrusted);
               if (result.created) {
                 ctx.ui?.notify?.(
                   `Config created at ${path.relative(cwd, result.file) || result.file}`,
@@ -213,7 +225,7 @@ export async function openSettings(ctx: ExtensionCommandContext): Promise<void> 
                 ctx.ui?.notify?.('Project settings activated for this workspace.', 'info');
               }
             } else {
-              const result = deactivateProjectScope(cwd);
+              const result = deactivateProjectScope(cwd, projectTrusted);
               ctx.ui?.notify?.(
                 result.changed
                   ? 'Project settings deactivated; user settings are active.'
@@ -232,11 +244,11 @@ export async function openSettings(ctx: ExtensionCommandContext): Promise<void> 
           } else {
             const targetScope = settings.projectScope ? 'project' : 'user';
             settings = next;
-            saveSettings(settings, targetScope, cwd);
+            saveSettings(settings, targetScope, cwd, projectTrusted);
           }
 
-          settings = loadSettings(cwd);
-          refreshItems(items, settings, cwd);
+          settings = loadSettings(cwd, projectTrusted);
+          refreshItems(items, settings, cwd, projectTrusted);
           list.invalidate();
 
           const note =

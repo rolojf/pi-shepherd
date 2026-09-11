@@ -205,7 +205,8 @@ function buildLocations(
   cwd: string,
   scope: AgentScope,
   projectDirs: string[],
-  includeBundled: boolean
+  includeBundled: boolean,
+  projectTrusted: boolean
 ): Location[] {
   const locations: Location[] = [];
 
@@ -222,7 +223,10 @@ function buildLocations(
     locations.push({ dir: path.join(os.homedir(), '.agents', 'agents'), source: 'user' });
   }
 
-  if (scope === 'project' || scope === 'both') {
+  // Project definitions are repository-controlled resources. Do not even
+  // inspect their directories until Pi has supplied an affirmative trust
+  // decision for this project.
+  if (projectTrusted && (scope === 'project' || scope === 'both')) {
     const piDir = findNearestProjectAgentsDir(cwd, CONFIG_DIR_NAME);
     if (piDir) {
       locations.push({ dir: piDir, source: 'project' });
@@ -246,6 +250,8 @@ function buildLocations(
 export interface DiscoveryOptions {
   /** When false, skip bundled agent locations (scout, planner, worker, reviewer). */
   includeBundled?: boolean;
+  /** Effective Pi trust for the current project; absent/false excludes project dirs. */
+  projectTrusted?: boolean;
 }
 
 export function discoverAgents(
@@ -254,7 +260,13 @@ export function discoverAgents(
   options: DiscoveryOptions = {}
 ): AgentDiscoveryResult {
   const projectDirs: string[] = [];
-  const locations = buildLocations(cwd, scope, projectDirs, options.includeBundled !== false);
+  const locations = buildLocations(
+    cwd,
+    scope,
+    projectDirs,
+    options.includeBundled !== false,
+    options.projectTrusted === true
+  );
 
   // First-write-with-guard: the first location (highest precedence) that
   // declares a given name wins; later duplicate names are dropped.

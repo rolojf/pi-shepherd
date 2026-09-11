@@ -2,7 +2,7 @@
 /**
  * Filesystem-only verification for per-workspace Shepherd settings:
  * user values in ~/.pi/agent/pi-shepherd/config.json and a self-contained
- * .shepherd/config.json activated by projectScope: true.
+ * .shepherd/config.json activated by projectScope: true after explicit trust.
  */
 import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
@@ -103,18 +103,18 @@ try {
       confirmProjectAgents: true,
     })
   );
-  assert.equal(loadSettings(cwd).projectScope, false, 'false flag leaves project dormant');
-  assert.equal(loadSettings(cwd).timeout, 25, 'dormant project timeout is ignored');
-  assert.equal(loadSettings(cwd).fieldnotes, false, 'dormant project fieldnotes are ignored');
-  assert.equal(loadSettings(cwd).confirmProjectAgents, false, 'project cannot own confirmation');
+  assert.equal(loadSettings(cwd, true).projectScope, false, 'false flag leaves project dormant');
+  assert.equal(loadSettings(cwd, true).timeout, 25, 'dormant project timeout is ignored');
+  assert.equal(loadSettings(cwd, true).fieldnotes, false, 'dormant project fieldnotes are ignored');
+  assert.equal(loadSettings(cwd, true).confirmProjectAgents, false, 'project cannot own confirmation');
 
   fs.writeFileSync(projectFile, JSON.stringify({ timeout: 30 }));
-  assert.equal(loadSettings(cwd).projectScope, false, 'keyless project file is dormant');
-  assert.equal(loadSettings(cwd).timeout, 25, 'keyless project values are dormant');
+  assert.equal(loadSettings(cwd, true).projectScope, false, 'keyless project file is dormant');
+  assert.equal(loadSettings(cwd, true).timeout, 25, 'keyless project values are dormant');
 
   fs.writeFileSync(projectFile, JSON.stringify({ projectScope: 'yes', timeout: 30 }));
-  assert.equal(loadSettings(cwd).projectScope, false, 'invalid project flag is dormant');
-  assert.equal(loadSettings(cwd).timeout, 25, 'invalid project flag does not apply values');
+  assert.equal(loadSettings(cwd, true).projectScope, false, 'invalid project flag is dormant');
+  assert.equal(loadSettings(cwd, true).timeout, 25, 'invalid project flag does not apply values');
 
   // --- active project files are self-contained ---------------------------
   fs.writeFileSync(
@@ -126,7 +126,7 @@ try {
       confirmProjectAgents: true,
     })
   );
-  const active = loadSettings(cwd);
+  const active = loadSettings(cwd, true);
   assert.equal(active.projectScope, true, 'true flag activates this workspace');
   assert.equal(active.timeout, 30, 'active project timeout applies');
   assert.equal(active.fieldnotes, true, 'active project fieldnotes apply');
@@ -143,69 +143,71 @@ try {
 
   // Legacy project scope is read-only compatible.
   fs.writeFileSync(projectFile, JSON.stringify({ settingsScope: 'project', timeout: 31 }));
-  assert.equal(loadSettings(cwd).projectScope, true, 'legacy project settingsScope activates');
-  assert.equal(loadSettings(cwd).timeout, 31, 'legacy project values apply');
+  assert.equal(loadSettings(cwd, true).projectScope, true, 'legacy project settingsScope activates');
+  assert.equal(loadSettings(cwd, true).timeout, 31, 'legacy project values apply');
   fs.writeFileSync(projectFile, JSON.stringify({ settingsScope: 'user', timeout: 31 }));
-  assert.equal(loadSettings(cwd).projectScope, false, 'legacy user scope does not activate');
+  assert.equal(loadSettings(cwd, true).projectScope, false, 'legacy user scope does not activate');
 
   // Malformed and non-object project files fall back to the user layer.
   fs.writeFileSync(projectFile, 'not json');
-  assert.equal(loadSettings(cwd).projectScope, false, 'malformed project file is inactive');
-  assert.equal(loadSettings(cwd).timeout, 25, 'malformed project file uses user values');
+  assert.equal(loadSettings(cwd, true).projectScope, false, 'malformed project file is inactive');
+  assert.equal(loadSettings(cwd, true).timeout, 25, 'malformed project file uses user values');
   fs.writeFileSync(projectFile, JSON.stringify([]));
-  assert.equal(loadSettings(cwd).projectScope, false, 'array project file is inactive');
+  assert.equal(loadSettings(cwd, true).projectScope, false, 'array project file is inactive');
 
   // --- full project writes and fresh creation ----------------------------
   let result = saveSettings(
     { ...DEFAULT_SETTINGS, projectScope: true, timeout: 42, confirmProjectAgents: false },
     'project',
-    cwd
+    cwd,
+    true
   );
   assert.equal(result.created, false, 'existing project file reports created=false');
   const rawProject = JSON.parse(fs.readFileSync(projectFile, 'utf8'));
   assert.equal(rawProject.projectScope, true, 'project save writes the activation flag');
   assert.equal(rawProject.timeout, 42, 'project save writes project values');
   assert.ok(!('confirmProjectAgents' in rawProject), 'project save omits user-only confirmation');
-  assert.equal(loadSettings(cwd).timeout, 42, 'saved project value applies');
+  assert.equal(loadSettings(cwd, true).timeout, 42, 'saved project value applies');
 
   result = saveSettings(
     { ...DEFAULT_SETTINGS, projectScope: true, timeout: 30 },
     'project',
-    freshCwd
+    freshCwd,
+    true
   );
   assert.equal(result.created, true, 'fresh project file reports created=true');
   assert.equal(JSON.parse(fs.readFileSync(projectConfigFile(freshCwd), 'utf8')).projectScope, true);
-  assert.equal(loadSettings(freshCwd).timeout, 30, 'fresh project activates independently');
-  assert.equal(loadSettings(cwd).timeout, 42, 'fresh project does not alter another workspace');
+  assert.equal(loadSettings(freshCwd, true).timeout, 30, 'fresh project activates independently');
+  assert.equal(loadSettings(cwd, true).timeout, 42, 'fresh project does not alter another workspace');
 
   // --- parked values and deactivation -----------------------------------
-  const parked = loadProjectFileValues(cwd);
+  const parked = loadProjectFileValues(cwd, true);
   assert.equal(parked.timeout, 42, 'parked project timeout is readable');
   assert.equal(
     parked.confirmProjectAgents,
     undefined,
     'parked project values exclude confirmation'
   );
-  const deactivated = deactivateProjectScope(cwd);
+  const deactivated = deactivateProjectScope(cwd, true);
   assert.equal(deactivated.changed, true, 'active project deactivation reports a change');
   const dormantRaw = JSON.parse(fs.readFileSync(projectFile, 'utf8'));
   assert.equal(dormantRaw.projectScope, false, 'deactivation writes false');
   assert.ok(fs.existsSync(projectFile), 'deactivation does not delete the file');
-  assert.equal(loadSettings(cwd).projectScope, false, 'deactivation restores user scope');
-  assert.equal(loadSettings(cwd).timeout, 25, 'deactivation restores user values');
-  assert.equal(deactivateProjectScope(cwd).changed, false, 'already-false deactivation is a no-op');
+  assert.equal(loadSettings(cwd, true).projectScope, false, 'deactivation restores user scope');
+  assert.equal(loadSettings(cwd, true).timeout, 25, 'deactivation restores user values');
+  assert.equal(deactivateProjectScope(cwd, true).changed, false, 'already-false deactivation is a no-op');
 
   // Keyless and legacy objects normalize safely when explicitly deactivated.
   fs.writeFileSync(projectFile, JSON.stringify({ timeout: 9 }));
   assert.equal(
-    deactivateProjectScope(cwd).changed,
+    deactivateProjectScope(cwd, true).changed,
     true,
     'keyless object is normalized on deactivation'
   );
   assert.equal(JSON.parse(fs.readFileSync(projectFile, 'utf8')).projectScope, false);
   fs.writeFileSync(projectFile, JSON.stringify({ settingsScope: 'project', timeout: 9 }));
   assert.equal(
-    deactivateProjectScope(cwd).changed,
+    deactivateProjectScope(cwd, true).changed,
     true,
     'legacy object is normalized on deactivation'
   );
@@ -213,7 +215,7 @@ try {
   assert.equal(normalizedLegacy.projectScope, false);
   assert.ok(!('settingsScope' in normalizedLegacy), 'legacy key is removed on deactivation');
   assert.equal(
-    deactivateProjectScope(path.join(home, 'missing')).changed,
+    deactivateProjectScope(path.join(home, 'missing'), true).changed,
     false,
     'missing file deactivation is a no-op'
   );
@@ -221,7 +223,7 @@ try {
   // --- fieldnotes session snapshot uses effective workspace settings -------
   saveSettings({ ...user, fieldnotes: false }, 'user');
   fs.writeFileSync(projectFile, JSON.stringify({ projectScope: true, fieldnotes: true }));
-  initializeSessionSettings(cwd);
+  initializeSessionSettings(cwd, true);
   assert.equal(fieldnotesEnabled(), true, 'active project fieldnotes are snapshotted');
   fs.rmSync(projectFile);
   initializeSessionSettings(cwd);

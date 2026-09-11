@@ -32,4 +32,4 @@ with exact steps and useful evidence.
 ```
 
 See the [README](../../README.md) for discovery precedence, bundled agents,
-and project-agent approval behavior.
+Pi project-trust requirements, and project-agent approval behavior.

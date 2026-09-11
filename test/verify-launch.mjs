@@ -1,6 +1,9 @@
 #!/usr/bin/env node
 /** Herdr-independent verification of delegated pi launch argument construction. */
+import { spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
 
 const { writePiLaunchFiles } = await import('../src/core/herdr.ts');
 let failures = 0;
@@ -48,7 +51,7 @@ function check(label, omit, includeOption = true, model, omitContextFiles) {
     );
     assert(
       script.includes('shepherd-done.ts') &&
-        script.includes('--tools read,shepherd_message,shepherd_done'),
+        script.includes("--tools 'read,shepherd_message,shepherd_done'"),
       `${label}: completion extension wiring + child-surface tools kept in --tools allowlist`
     );
     assert(
@@ -130,6 +133,44 @@ try {
   assert(script.includes("PI_SHEPHERD_TASK_ID='shepherd-task-1'"), 'broker launch: task id wiring');
 } finally {
   fs.rmSync(brokerLaunch.dir, { recursive: true, force: true });
+}
+
+const shellSafetyDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pi-shepherd-shell-safety-'));
+const fakeBinDir = path.join(shellSafetyDir, 'bin');
+const injectedMarker = path.join(shellSafetyDir, 'injected');
+const capturedArgs = path.join(shellSafetyDir, 'pi-args');
+const hostileTool = `read; touch '${injectedMarker}' #`;
+let hostileLaunch;
+try {
+  fs.mkdirSync(fakeBinDir);
+  fs.writeFileSync(
+    path.join(fakeBinDir, 'pi'),
+    '#!/bin/bash\nprintf \'%s\\n\' "$@" > "$PI_ARGS_FILE"\n',
+    { mode: 0o700 }
+  );
+  hostileLaunch = writePiLaunchFiles({ name: 'shell-safety', tools: [hostileTool] });
+
+  const result = spawnSync('bash', [hostileLaunch.scriptFile], {
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      PATH: `${fakeBinDir}:${process.env.PATH ?? ''}`,
+      PI_ARGS_FILE: capturedArgs,
+    },
+  });
+  const args = fs.existsSync(capturedArgs) ? fs.readFileSync(capturedArgs, 'utf8').split('\n') : [];
+  const toolsIndex = args.indexOf('--tools');
+
+  assert(result.status === 0, 'tool allowlist: launch script completes');
+  assert(!fs.existsSync(injectedMarker), 'tool allowlist: shell syntax is not executed');
+  assert(
+    toolsIndex >= 0 &&
+      args[toolsIndex + 1] === `${hostileTool},shepherd_message,shepherd_done`,
+    'tool allowlist: Pi receives the complete tool list as one argument'
+  );
+} finally {
+  if (hostileLaunch) fs.rmSync(hostileLaunch.dir, { recursive: true, force: true });
+  fs.rmSync(shellSafetyDir, { recursive: true, force: true });
 }
 
 // Inheritance is resolved before launch; absent model must omit --model.
